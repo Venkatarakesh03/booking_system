@@ -1,10 +1,11 @@
 from flask import Flask, render_template, request, redirect, url_for, session
 from werkzeug.security import generate_password_hash, check_password_hash
+import psycopg2
+import psycopg2.extras
 import os
 from contextlib import contextmanager
 from dotenv import load_dotenv
-from sqlalchemy import create_engine, text
-from sqlalchemy.exc import IntegrityError
+from urllib.parse import urlparse, parse_qs
 
 # Load environment variables
 load_dotenv()
@@ -12,28 +13,49 @@ load_dotenv()
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
 
-# Database URL (SQLAlchemy + pg8000)
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql+pg8000://username:password@ep-example.us-east-2.aws.neon.tech/neondb?sslmode=require"
+    "postgresql://username:password@ep-example.us-east-2.aws.neon.tech/neondb?sslmode=require"
 )
 
-# Create database engine
-engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+if not DATABASE_URL:
+    DATABASE_URL = "postgresql://neondb_owner:npg_hYoB4uUiaq1v@ep-morning-meadow-ae8u1jey-pooler.c-2.us-east-2.aws.neon.tech/neondb?sslmode=require"
+    print("⚠ Warning: Using fallback DATABASE_URL. Consider fixing your .env file.")
 
+# --- Database Connection Manager ---
 @contextmanager
 def get_db_connection():
-    """Database connection context manager using SQLAlchemy."""
-    connection = engine.connect()
+    """Context manager for database connections"""
+    conn = None
     try:
-        yield connection
-    finally:
-        connection.close()
+        # Parse the database URL properly
+        url = urlparse(DATABASE_URL)
+        params = parse_qs(url.query)
 
+        conn = psycopg2.connect(
+            dbname=url.path[1:],  # remove leading "/"
+            user=url.username,
+            password=url.password,
+            host=url.hostname,
+            port=url.port or 5432,
+            sslmode=params.get("sslmode", ["require"])[0]
+        )
+        yield conn
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        raise e
+    finally:
+        if conn:
+            conn.close()
+
+# --- Initialize Database ---
 def init_database():
-    """Initialize database tables if they don't exist."""
+    """Initialize database tables"""
     with get_db_connection() as conn:
-        conn.execute(text("""
+        cur = conn.cursor()
+
+        cur.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 id SERIAL PRIMARY KEY,
                 name VARCHAR(255) NOT NULL,
@@ -41,8 +63,8 @@ def init_database():
                 password VARCHAR(255) NOT NULL,
                 address TEXT
             )
-        """))
-        conn.execute(text("""
+        """)
+        cur.execute("""
             CREATE TABLE IF NOT EXISTS workers (
                 id SERIAL PRIMARY KEY,
                 name VARCHAR(255) NOT NULL,
@@ -52,8 +74,8 @@ def init_database():
                 hourly_charge DECIMAL(10,2),
                 city VARCHAR(255)
             )
-        """))
-        conn.execute(text("""
+        """)
+        cur.execute("""
             CREATE TABLE IF NOT EXISTS bookings (
                 id SERIAL PRIMARY KEY,
                 user_id INTEGER REFERENCES users(id),
@@ -62,12 +84,17 @@ def init_database():
                 booking_time TIME,
                 status VARCHAR(50) DEFAULT 'Pending'
             )
-        """))
+        """)
         conn.commit()
+        cur.close()
 
 @app.route('/')
 def home():
-    return render_template('index.html')
+    try:
+        return render_template('index.html')
+    except Exception as e:
+        print(f"Error in home route: {str(e)}")
+        return f"Template error: {str(e)}"
 
 @app.route('/signup', methods=['GET', 'POST'])
 def signup():
@@ -75,36 +102,42 @@ def signup():
         role = request.form['role']
         name = request.form['name']
         email = request.form['email']
-        password = generate_password_hash(request.form['password'])
+        password = request.form['password']
+        hashed_password = generate_password_hash(password)
 
         try:
             with get_db_connection() as conn:
+                cur = conn.cursor()
+
                 if role == 'user':
-                    address = f"{request.form['doorNo']}, {request.form['street']}, {request.form['city']}"
-                    conn.execute(text(
-                        "INSERT INTO users (name, email, password, address) VALUES (:name, :email, :password, :address)"
-                    ), {"name": name, "email": email, "password": password, "address": address})
+                    door_no = request.form['doorNo']
+                    street = request.form['street']
+                    city = request.form['city']
+                    address = f"{door_no}, {street}, {city}"
+                    cur.execute(
+                        "INSERT INTO users (name, email, password, address) VALUES (%s, %s, %s, %s)",
+                        (name, email, hashed_password, address)
+                    )
 
                 elif role == 'worker':
-                    conn.execute(text(
-                        "INSERT INTO workers (name, email, password, profession, hourly_charge, city) "
-                        "VALUES (:name, :email, :password, :profession, :hourly_charge, :city)"
-                    ), {
-                        "name": name,
-                        "email": email,
-                        "password": password,
-                        "profession": request.form['profession'],
-                        "hourly_charge": request.form['hourlyCharge'],
-                        "city": request.form['workerCity']
-                    })
+                    profession = request.form['profession']
+                    hourly_charge = request.form['hourlyCharge']
+                    worker_city = request.form['workerCity']
+                    cur.execute(
+                        "INSERT INTO workers (name, email, password, profession, hourly_charge, city) VALUES (%s, %s, %s, %s, %s, %s)",
+                        (name, email, hashed_password, profession, hourly_charge, worker_city)
+                    )
 
                 conn.commit()
-        except IntegrityError:
+                cur.close()
+
+        except psycopg2.IntegrityError:
             return "Email already exists. Please use a different email."
         except Exception as e:
             return f"An error occurred: {str(e)}"
 
         return redirect(url_for('login'))
+
     return render_template('signup.html')
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -115,97 +148,176 @@ def login():
 
         try:
             with get_db_connection() as conn:
-                user = conn.execute(text("SELECT * FROM users WHERE email = :email"), {"email": email}).mappings().first()
-                if user and check_password_hash(user['password'], password):
-                    session['user_id'] = user['id']
+                cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+                cur.execute("SELECT * FROM users WHERE email = %s", (email,))
+                user_data = cur.fetchone()
+
+                if user_data and check_password_hash(user_data['password'], password):
+                    session['user_id'] = user_data['id']
                     session['user_type'] = 'user'
                     return redirect(url_for('user_dashboard'))
 
-                worker = conn.execute(text("SELECT * FROM workers WHERE email = :email"), {"email": email}).mappings().first()
-                if worker and check_password_hash(worker['password'], password):
-                    session['user_id'] = worker['id']
+                cur.execute("SELECT * FROM workers WHERE email = %s", (email,))
+                worker_data = cur.fetchone()
+
+                if worker_data and check_password_hash(worker_data['password'], password):
+                    session['user_id'] = worker_data['id']
                     session['user_type'] = 'worker'
                     return redirect(url_for('worker_dashboard'))
+
+                cur.close()
+
         except Exception as e:
             return f"An error occurred: {str(e)}"
 
         return "Invalid credentials, please try again."
     return render_template('login.html')
 
-@app.route('/user_dashboard')
+@app.route('/user_dashboard', methods=['GET', 'POST'])
 def user_dashboard():
-    if 'user_id' not in session or session.get('user_type') != 'user':
+    if 'user_id' not in session:
         return redirect(url_for('login'))
 
-    with get_db_connection() as conn:
-        user = conn.execute(text("SELECT * FROM users WHERE id = :id"), {"id": session['user_id']}).mappings().first()
-        bookings = conn.execute(text("""
-            SELECT b.*, w.name AS worker_name, w.profession 
-            FROM bookings b 
-            JOIN workers w ON b.worker_id = w.id 
-            WHERE b.user_id = :id
-            ORDER BY b.booking_date DESC
-        """), {"id": session['user_id']}).mappings().all()
-        workers = conn.execute(text("SELECT * FROM workers ORDER BY name")).mappings().all()
+    try:
+        with get_db_connection() as conn:
+            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cur.execute("SELECT * FROM users WHERE id = %s", (session['user_id'],))
+            user_data = cur.fetchone()
 
-    return render_template('user_dashboard.html', user=user, bookings=bookings, workers=workers)
+            cur.execute("""
+                SELECT b.*, w.name AS worker_name, w.profession
+                FROM bookings b
+                JOIN workers w ON b.worker_id = w.id
+                WHERE b.user_id = %s
+                ORDER BY b.booking_date DESC
+            """, (session['user_id'],))
+            bookings = cur.fetchall()
+
+            cur.execute("SELECT * FROM workers ORDER BY name")
+            workers = cur.fetchall()
+            cur.close()
+
+        return render_template('user_dashboard.html', user=user_data, bookings=bookings, workers=workers)
+    except Exception as e:
+        return f"Dashboard Error: {str(e)}"
 
 @app.route('/worker_dashboard')
 def worker_dashboard():
-    if 'user_id' not in session or session.get('user_type') != 'worker':
+    if 'user_id' not in session:
         return redirect(url_for('login'))
 
-    with get_db_connection() as conn:
-        worker = conn.execute(text("SELECT * FROM workers WHERE id = :id"), {"id": session['user_id']}).mappings().first()
-        bookings = conn.execute(text("""
-            SELECT b.*, u.name AS user_name, u.address AS user_address
-            FROM bookings b 
-            JOIN users u ON b.user_id = u.id 
-            WHERE b.worker_id = :id
-        """), {"id": session['user_id']}).mappings().all()
+    try:
+        with get_db_connection() as conn:
+            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cur.execute("SELECT * FROM workers WHERE id = %s", (session['user_id'],))
+            worker = cur.fetchone()
+
+            if not worker:
+                return "Worker not found", 404
+
+            cur.execute("""
+                SELECT b.*, u.name as user_name, u.address as user_address 
+                FROM bookings b 
+                JOIN users u ON b.user_id = u.id 
+                WHERE b.worker_id = %s
+            """, (session['user_id'],))
+            bookings = cur.fetchall()
+            cur.close()
+
+    except Exception as e:
+        return f"An error occurred: {str(e)}"
 
     total_requests = len(bookings)
     accepted_count = sum(1 for b in bookings if b['status'] == 'Accepted')
     rejected_count = sum(1 for b in bookings if b['status'] == 'Rejected')
 
-    return render_template('worker_dashboard.html', worker=worker, bookings=bookings,
-                           total_requests=total_requests, accepted_count=accepted_count, rejected_count=rejected_count)
+    return render_template('worker_dashboard.html', worker=worker, bookings=bookings, total_requests=total_requests,
+                           accepted_count=accepted_count, rejected_count=rejected_count)
 
 @app.route('/logout')
 def logout():
-    session.clear()
+    session.pop('user_id', None)
+    session.pop('user_type', None)
     return redirect(url_for('login'))
 
 @app.route('/book_worker', methods=['POST'])
 def book_worker():
-    worker_id = request.form['worker_id']
-    booking_date = request.form['date']
-    booking_time = request.form['time']
+    try:
+        worker_id = request.form['worker_id']
+        booking_date = request.form['date']
+        booking_time = request.form['time']
+        user_id = session['user_id']
+
+        if not worker_id or not booking_date or not booking_time:
+            return "Error: Missing required fields", 400
+
+        with get_db_connection() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "INSERT INTO bookings (user_id, worker_id, booking_date, booking_time, status) VALUES (%s, %s, %s, %s, %s)",
+                (user_id, worker_id, booking_date, booking_time, 'Pending')
+            )
+            conn.commit()
+            cur.close()
+
+        return redirect(url_for('user_dashboard'))
+    except KeyError as e:
+        return f"Error: Missing form field {e}", 400
+    except Exception as e:
+        return f"An unexpected error occurred: {e}", 500
+
+@app.route('/history')
+def history():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+
     user_id = session['user_id']
+    try:
+        with get_db_connection() as conn:
+            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cur.execute("""
+                SELECT b.*, w.name as worker_name, w.city as worker_city, w.hourly_charge 
+                FROM bookings b 
+                JOIN workers w ON b.worker_id = w.id 
+                WHERE b.user_id = %s
+            """, (user_id,))
+            bookings = cur.fetchall()
+            cur.close()
+    except Exception as e:
+        return f"An error occurred: {str(e)}"
 
-    with get_db_connection() as conn:
-        conn.execute(text(
-            "INSERT INTO bookings (user_id, worker_id, booking_date, booking_time, status) "
-            "VALUES (:user_id, :worker_id, :booking_date, :booking_time, 'Pending')"
-        ), {"user_id": user_id, "worker_id": worker_id, "booking_date": booking_date, "booking_time": booking_time})
-        conn.commit()
-
-    return redirect(url_for('user_dashboard'))
+    return render_template('history.html', bookings=bookings)
 
 @app.route('/accept_booking/<int:booking_id>', methods=['POST'])
 def accept_booking(booking_id):
-    with get_db_connection() as conn:
-        conn.execute(text("UPDATE bookings SET status = 'Accepted' WHERE id = :id"), {"id": booking_id})
-        conn.commit()
+    try:
+        with get_db_connection() as conn:
+            cur = conn.cursor()
+            cur.execute("UPDATE bookings SET status = %s WHERE id = %s", ('Accepted', booking_id))
+            conn.commit()
+            cur.close()
+    except Exception as e:
+        return f"An error occurred: {str(e)}"
     return redirect(url_for('worker_dashboard'))
 
 @app.route('/reject_booking/<int:booking_id>', methods=['POST'])
 def reject_booking(booking_id):
-    with get_db_connection() as conn:
-        conn.execute(text("UPDATE bookings SET status = 'Rejected' WHERE id = :id"), {"id": booking_id})
-        conn.commit()
+    try:
+        with get_db_connection() as conn:
+            cur = conn.cursor()
+            cur.execute("UPDATE bookings SET status = %s WHERE id = %s", ('Rejected', booking_id))
+            conn.commit()
+            cur.close()
+    except Exception as e:
+        return f"An error occurred: {str(e)}"
     return redirect(url_for('worker_dashboard'))
 
 if __name__ == '__main__':
-    init_database()
+    try:
+        init_database()
+        print("✅ Database initialized successfully!")
+    except Exception as e:
+        print(f"Database initialization error: {e}")
+
     app.run(host='0.0.0.0', port=5000, debug=True)
