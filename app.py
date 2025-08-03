@@ -15,6 +15,7 @@ app.secret_key = os.urandom(24)
 # Neon Database Connection
 DATABASE_URL = os.getenv('DATABASE_URL')
 
+
 # Fallback to direct connection string if .env not working
 if not DATABASE_URL:
     DATABASE_URL = 'postgresql://neondb_owner:npg_hYoB4uUiaq1v@ep-morning-meadow-ae8u1jey-pooler.c-2.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require'
