@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Worker Dashboard</title>
+    <style>
+        /* General Reset */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        /* Background Styling */
+        body {
+            background-image: url("{{ url_for('static', filename='css/bg.jpg') }}");
+            background-size: cover;
+            background-position: center;
+            font-family: Arial, sans-serif;
+        }
+
+        /* Fixed Header */
+        .header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            background: rgba(255, 255, 255, 0.9);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 20px;
+            box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.1);
+            z-index: 1000;
+        }
+
+        /* Profile Section */
+        .profile {
+            display: flex;
+            align-items: center;
+        }
+
+        .profile .icon {
+            width: 50px;
+            height: 50px;
+            background-color: #ddd;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 24px;
+            color: #555;
+            margin-right: 10px;
+        }
+
+        .profile h2 {
+            font-size: 20px;
+            color: #333;
+        }
+
+        /* Logout Button */
+        .logout-btn {
+            padding: 10px 15px;
+            background-color: #d9534f;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            font-weight: bold;
+            transition: background 0.3s;
+        }
+
+        .logout-btn:hover {
+            background-color: #c9302c;
+        }
+
+        /* Page Content (Pushed Down for Fixed Header) */
+        .container {
+            margin-top: 90px;
+            padding: 20px;
+        }
+
+        /* Booking Stats */
+        .stats {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .stats h4 {
+            background: white;
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0px 2px 5px rgba(0, 0, 0, 0.1);
+        }
+
+        /* Booking Requests Table with Scroll */
+        .requests-container {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0px 2px 10px rgba(0, 0, 0, 0.1);
+            max-height: 400px; /* Set max height for scrolling */
+            overflow-y: auto; /* Enable vertical scrolling */
+        }
+
+        .requests-container h3 {
+            margin-bottom: 15px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th, td {
+            padding: 10px;
+            text-align: left;
+            border: 1px solid #ddd;
+        }
+
+        th {
+            background-color: #007bff;
+            color: white;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+
+        /* Accept/Reject Buttons */
+        .action-buttons {
+            display: flex;
+            justify-content: center;
+            gap: 5px;
+        }
+
+        .accept-btn, .reject-btn {
+            padding: 5px 8px;
+            font-size: 12px;
+            cursor: pointer;
+            border-radius: 4px;
+            border: none;
+            transition: background 0.3s ease;
+        }
+
+        .accept-btn {
+            background-color: #4caf50;
+            color: white;
+        }
+
+        .accept-btn:hover {
+            background-color: #45a049;
+        }
+
+        .reject-btn {
+            background-color: #f44336;
+            color: white;
+        }
+
+        .reject-btn:hover {
+            background-color: #d32f2f;
+        }
+
+        /* Responsive Design */
+        @media (max-width: 768px) {
+            .header {
+                flex-direction: column;
+                align-items: center;
+                text-align: center;
+            }
+
+            .stats {
+                flex-direction: column;
+                align-items: center;
+            }
+
+            .action-buttons {
+                flex-direction: column;
+            }
+
+            .requests-container {
+                max-height: 300px;
+            }
+
+            table {
+                display: block;
+                overflow-x: auto;
+                white-space: nowrap;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Fixed Header -->
+    <div class="header">
+        <div class="profile">
+            <div class="icon">👤</div>
+            <h2>{{ worker.name }}</h2>
+        </div>
+        <a href="{{ url_for('logout') }}" class="logout-btn">Logout</a>
+    </div>
+
+    <!-- Page Content -->
+    <div class="container">
+        <!-- Booking Stats -->
+        <div class="stats">
+            <h4>Total Requests: {{ total_requests }}</h4>
+            <h4>Accepted: {{ accepted_count }}</h4>
+            <h4>Rejected: {{ rejected_count }}</h4>
+        </div>
+
+        <!-- Booking Requests Table -->
+        <div class="requests-container">
+            <h3>Requests</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>User Name</th>
+                        <th>Booking Date</th>
+                        <th>Booking Time</th>
+                        <th>Address</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for booking in bookings %}
+                    <tr>
+                        <td>{{ booking.user_name }}</td>
+                        <td>{{ booking.booking_date }}</td>
+                        <td>{{ booking.booking_time }}</td>
+                        <td>
+                            {% if booking.status == 'Accepted' %} 
+                                {{ booking.user_address }} 
+                            {% else %} 
+                                No Address Available 
+                            {% endif %}
+                        </td>
+                        <td class="action-buttons">
+                            {% if booking.status == 'Pending' %}
+                                <form action="{{ url_for('accept_booking', booking_id=booking.id) }}" method="post" style="display: inline">
+                                    <button type="submit" class="accept-btn">✓</button>
+                                </form>
+                                <form action="{{ url_for('reject_booking', booking_id=booking.id) }}" method="post" style="display: inline">
+                                    <button type="submit" class="reject-btn">✗</button>
+                                </form>
+                            {% else %}
+                                {% if booking.status == 'Accepted' %} 
+                                    <span style="color: green;">Accepted</span> 
+                                {% else %} 
+                                    <span style="color: red;">Rejected</span> 
+                                {% endif %}
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+</body>
+</html>

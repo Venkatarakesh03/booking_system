@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Worker Booking System</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+        font-family: Arial, sans-serif;
+      }
+
+      body {
+        background: url('/static/bg.jpg') no-repeat center center/cover;
+        height: 100vh;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+      }
+
+      .card {
+        background: rgba(255, 255, 255, 0.9);
+        padding: 30px;
+        border-radius: 12px;
+        text-align: center;
+        box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3);
+        width: 300px; /* Increased width */
+      }
+
+      .card a {
+        display: block;
+        margin: 15px 0;
+        padding: 12px 0;
+        text-decoration: none;
+        color: white;
+        background: #007bff;
+        border-radius: 8px;
+        font-size: 18px;
+        font-weight: bold;
+        transition: all 0.3s ease;
+      }
+
+      .card a:hover {
+        background: #0056b3;
+        transform: scale(1.05); /* Slightly increases size on hover */
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h2>Welcome to Worker Booking System</h2>
+      <a href="/signup">Sign Up</a>
+      <a href="/login">Login</a>
+    </div>
+  </body>
+</html>

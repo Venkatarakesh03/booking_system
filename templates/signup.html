@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Signup</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+        font-family: Arial, sans-serif;
+      }
+
+      body {
+        background: url('/static/bg.jpg') no-repeat center center/cover;
+        height: 100vh;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+      }
+
+      .card {
+        background: rgba(255, 255, 255, 0.9);
+        padding: 25px;
+        border-radius: 12px;
+        box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3);
+        width: 350px;
+      }
+
+      h2 {
+        text-align: center;
+        margin-bottom: 15px;
+      }
+
+      form {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start; /* Align labels and inputs to the left */
+      }
+
+      label {
+        text-align: left;
+        width: 100%; /* Ensure full width */
+        margin: 8px 0 5px;
+        font-weight: bold;
+      }
+
+      input, select {
+        width: 100%;
+        padding: 10px;
+        border: 1px solid #ccc;
+        border-radius: 5px;
+        font-size: 16px;
+      }
+
+      button {
+        margin-top: 15px;
+        padding: 12px;
+        background: #007bff;
+        color: white;
+        border: none;
+        border-radius: 8px;
+        font-size: 18px;
+        font-weight: bold;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        width: 100%;
+      }
+
+      button:hover {
+        background: #0056b3;
+        transform: scale(1.05);
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+      }
+
+      #worker-fields, #user-fields {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h2>Signup</h2>
+      <form method="POST">
+        <label for="role">Role</label>
+        <select id="role" name="role" required>
+          <option value="user">User</option>
+          <option value="worker">Worker</option>
+        </select>
+
+        <label for="name">Full Name</label>
+        <input type="text" id="name" name="name" required placeholder="Enter your name" />
+
+        <label for="email">Email</label>
+        <input type="email" id="email" name="email" required placeholder="Enter your email" />
+
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" required placeholder="Enter your password" />
+
+        <!-- Worker Fields -->
+        <div id="worker-fields">
+          <label for="profession">Profession</label>
+          <input type="text" id="profession" name="profession" placeholder="e.g. Plumber" />
+
+          <label for="hourlyCharge">Hourly Charge</label>
+          <input type="number" id="hourlyCharge" name="hourlyCharge" placeholder="Hourly Charge" />
+
+          <label for="workerCity">City</label>
+          <input type="text" id="workerCity" name="workerCity" placeholder="City" />
+        </div>
+
+        <!-- User Fields -->
+        <div id="user-fields">
+          <label for="doorNo">Door Number</label>
+          <input type="text" id="doorNo" name="doorNo" placeholder="Enter your door number" />
+
+          <label for="street">Street</label>
+          <input type="text" id="street" name="street" placeholder="Enter your street" />
+
+          <label for="city">City</label>
+          <input type="text" id="city" name="city" placeholder="Enter your city" />
+        </div>
+
+        <button type="submit">Signup</button>
+      </form>
+    </div>
+
+    <script>
+      const roleSelect = document.getElementById("role");
+      const workerFields = document.getElementById("worker-fields");
+      const userFields = document.getElementById("user-fields");
+      const professionField = document.getElementById("profession");
+      const hourlyChargeField = document.getElementById("hourlyCharge");
+      const workerCityField = document.getElementById("workerCity");
+
+      roleSelect.addEventListener("change", function () {
+        if (this.value === "worker") {
+          workerFields.style.display = "block";
+          userFields.style.display = "none";
+          professionField.setAttribute("required", true);
+          hourlyChargeField.setAttribute("required", true);
+          workerCityField.setAttribute("required", true);
+        } else {
+          workerFields.style.display = "none";
+          userFields.style.display = "block";
+          professionField.removeAttribute("required");
+          hourlyChargeField.removeAttribute("required");
+          workerCityField.removeAttribute("required");
+        }
+      });
+
+      roleSelect.dispatchEvent(new Event("change"));
+    </script>
+  </body>
+</html>
